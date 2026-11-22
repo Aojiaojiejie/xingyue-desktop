@@ -1,5 +1,9 @@
 # 星月 · 桌面整理
 
+[![CI](https://github.com/Aojiaojiejie/xingyue-desktop/actions/workflows/ci.yml/badge.svg)](https://github.com/Aojiaojiejie/xingyue-desktop/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-6e7681.svg)](#已知限制)
+
 Windows 桌面图标布局管理工具。为当前桌面图标位置建立快照，一键恢复；支持多套布局方案、右侧「待整理」区、按文件类型自动归类，以及按规则重排图标。
 
 ![主界面](docs/screenshots/01-overview.png)
@@ -125,7 +129,7 @@ python main.py --demo
 pytest
 ```
 
-当前 12 项核心逻辑测试覆盖归类、待整理区排布、排序、坐标缩放、存储、快照恢复、整理与撤销。
+当前 14 项核心逻辑测试覆盖归类、待整理区排布、排序、坐标缩放、存储、快照恢复、整理与撤销，以及路径遍历防护。
 
 ### 构建与打包
 
@@ -202,7 +206,9 @@ python tools\make_icon.py      # 重新生成图标与文档预览
 
 ## 许可证
 
-尚未指定开源许可证。对外发布前需确定许可证（如 MIT、Apache-2.0、GPL-3.0）并添加 `LICENSE` 文件。
+[MIT](LICENSE) © 2026 Aojiaojiejie
+
+可自由使用、修改、分发与商用，保留版权声明即可。
 
 ## 版本
 

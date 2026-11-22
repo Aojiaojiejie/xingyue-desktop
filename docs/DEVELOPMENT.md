@@ -122,7 +122,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 - [ ] 隔离安装/卸载测试通过
 - [ ] 完整安装测试通过（可选，需临时写入开始菜单与 HKCU）
 - [ ] 更新 `CHANGELOG.md`
-- [ ] 确认许可证已添加
+- [x] 确认许可证已添加（MIT，见 `LICENSE`）
 - [ ] 不提交 `artifacts/`、`build/`、`__pycache__`、本地日志
 
 ## 持续集成
