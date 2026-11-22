@@ -1,0 +1,42 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---- Build ----
+build/
+dist/
+artifacts/*
+!artifacts/README.md
+*.spec.bak
+*.manifest
+
+# ---- Runtime / developer data ----
+.demo-data/
+.probe-data/
+.actions-data/
+ui-shots/
+*.log
+
+# ---- Secrets / local environment ----
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+secrets.json
+
+# ---- Editors / OS ----
+.idea/
+.vscode/
+Thumbs.db
+desktop.ini
+.DS_Store

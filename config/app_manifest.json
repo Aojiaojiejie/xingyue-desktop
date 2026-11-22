@@ -1,0 +1,9 @@
+{
+  "app_id": "XingYueDesktop",
+  "display_name": "星月-桌面整理",
+  "version": "1.0.0",
+  "publisher": "XingYue",
+  "exe_name": "星月-桌面整理.exe",
+  "data_dir_name": "XingYueDesktop",
+  "description": "Windows 桌面图标布局管理工具"
+}
