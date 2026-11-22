@@ -17,7 +17,7 @@ VSVersionInfo(
         StringStruct('FileDescription', '星月-桌面整理'),
         StringStruct('FileVersion', '1.0.0'),
         StringStruct('InternalName', 'XingYueDesktop'),
-        StringStruct('LegalCopyright', 'Copyright (C) 2026'),
+        StringStruct('LegalCopyright', 'Copyright (C) 2026 Aojiaojiejie'),
         StringStruct('OriginalFilename', '星月-桌面整理.exe'),
         StringStruct('ProductName', '星月-桌面整理'),
         StringStruct('ProductVersion', '1.0.0')

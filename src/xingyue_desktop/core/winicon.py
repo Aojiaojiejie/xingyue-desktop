@@ -38,6 +38,11 @@ MEM_RESERVE = 0x2000
 MEM_RELEASE = 0x8000
 PAGE_READWRITE = 0x04
 
+# 同一块远程缓冲被三种结构复用，偏移必须互不重叠并留足余量：
+# [0, sizeof(LVITEMW)) 放结构体，TEXT_OFF 起放 TEXT_CHARS 个 UTF-16 字符，
+# POINT_OFF 起放 POINT。调整任一常量前先确认
+# TEXT_OFF + TEXT_CHARS * 2 <= POINT_OFF 且 POINT_OFF + 8 <= BUF_SIZE，
+# 否则跨进程写入会越界破坏 explorer 内存。
 BUF_SIZE = 4096
 TEXT_OFF = 1024
 TEXT_CHARS = 260
@@ -122,6 +127,8 @@ class _Remote:
     """在 explorer.exe 内的一块可读写缓冲区。"""
 
     def __init__(self, hwnd: int, size: int = BUF_SIZE) -> None:
+        # 先置 None：__init__ 中途抛异常时 close()/__del__ 仍能安全执行。
+        self.address: int | None = None
         pid = wintypes.DWORD()
         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
         self.pid = int(pid.value)
@@ -134,12 +141,17 @@ class _Remote:
             )
         try:
             is_wow = wintypes.BOOL()
-            if kernel32.IsWow64Process(self.process, ctypes.byref(is_wow)):
-                explorer_bits = 32 if is_wow.value else 64
-                if explorer_bits != ctypes.sizeof(ctypes.c_void_p) * 8:
-                    kernel32.CloseHandle(self.process)
-                    self.process = None
-                    raise DesktopError("Python 与资源管理器的位数不一致，无法安全读写桌面图标。")
+            if not kernel32.IsWow64Process(self.process, ctypes.byref(is_wow)):
+                code = ctypes.get_last_error()
+                kernel32.CloseHandle(self.process)
+                self.process = None
+                raise DesktopError(f"无法确定资源管理器的位数（错误码 {code}），已拒绝读写桌面图标。")
+            explorer_bits = 32 if is_wow.value else 64
+            # 位数不一致时结构体布局不同，写入会破坏 explorer 内存，必须拒绝而不是降级。
+            if explorer_bits != ctypes.sizeof(ctypes.c_void_p) * 8:
+                kernel32.CloseHandle(self.process)
+                self.process = None
+                raise DesktopError("Python 与资源管理器的位数不一致，无法安全读写桌面图标。")
         except AttributeError:  # pragma: no cover
             pass
         self.address = kernel32.VirtualAllocEx(
@@ -170,12 +182,16 @@ class _Remote:
         return buf.raw[: got.value]
 
     def close(self) -> None:
-        if self.process:
-            if self.address:
-                kernel32.VirtualFreeEx(self.process, ctypes.c_void_p(self.address), 0, MEM_RELEASE)
-                self.address = None
-            kernel32.CloseHandle(self.process)
-            self.process = None
+        # __init__ 可能在 self.process 赋值之前就失败，__del__ 仍会走到这里。
+        process = getattr(self, "process", None)
+        if not process:
+            return
+        address = getattr(self, "address", None)
+        if address:
+            kernel32.VirtualFreeEx(process, ctypes.c_void_p(address), 0, MEM_RELEASE)
+            self.address = None
+        kernel32.CloseHandle(process)
+        self.process = None
 
 
 def _find_listview() -> int | None:
@@ -270,7 +286,9 @@ class DesktopAPI:
     def _item_pos(self, index: int) -> tuple[int, int]:
         assert self._remote is not None
         addr = self._remote.address + POINT_OFF
-        user32.SendMessageW(self.hwnd, LVM_GETITEMPOSITION, index, addr)
+        # 失败时 SendMessage 不会写远程缓冲，读回来的是上一轮残留坐标，必须显式拒绝。
+        if not user32.SendMessageW(self.hwnd, LVM_GETITEMPOSITION, index, addr):
+            raise DesktopError(f"读取第 {index} 个图标的坐标失败。")
         raw = self._remote.read(8, POINT_OFF)
         if len(raw) < 8:
             raise DesktopError("读取图标坐标失败。")
@@ -297,18 +315,32 @@ class DesktopAPI:
             return 96, 96
         return cx, cy
 
-    def auto_arrange(self) -> bool:
+    def _window_style(self) -> int:
+        # GetWindowLongPtrW 失败返回 0，与合法的样式值 0 无法区分，只能靠 last error 判定。
+        # 若把失败当成 0 继续按位改写，会把桌面视图的其他样式位一并清掉。
+        ctypes.set_last_error(0)
         style = int(user32.GetWindowLongPtrW(self.hwnd, GWL_STYLE))
-        return bool(style & LVS_AUTOARRANGE)
+        if style == 0:
+            code = ctypes.get_last_error()
+            if code != 0:
+                raise DesktopError(f"读取桌面视图样式失败（错误码 {code}）。")
+        return style
+
+    def auto_arrange(self) -> bool:
+        return bool(self._window_style() & LVS_AUTOARRANGE)
 
     def set_auto_arrange(self, enabled: bool) -> bool:
         """切换桌面「自动排列图标」，返回是否发生了改变。"""
-        style = int(user32.GetWindowLongPtrW(self.hwnd, GWL_STYLE))
+        style = self._window_style()
         current = bool(style & LVS_AUTOARRANGE)
         if current == enabled:
             return False
-        new_style = style | LVS_AUTOARRANGE if enabled else style & ~LVS_AUTOARRANGE
-        user32.SetWindowLongPtrW(self.hwnd, GWL_STYLE, new_style)
+        new_style = (style | LVS_AUTOARRANGE) if enabled else (style & ~LVS_AUTOARRANGE)
+        ctypes.set_last_error(0)
+        if int(user32.SetWindowLongPtrW(self.hwnd, GWL_STYLE, new_style)) == 0:
+            code = ctypes.get_last_error()
+            if code != 0:
+                raise DesktopError(f"修改桌面视图样式失败（错误码 {code}）。")
         user32.InvalidateRect(self.hwnd, None, True)
         return True
     def set_positions(self, moves: list[tuple[int, int, int]], disable_auto: bool = True,
@@ -319,7 +351,12 @@ class DesktopAPI:
         self._ensure()
         assert self._remote is not None
         if disable_auto:
-            self.set_auto_arrange(False)
+            # 关不掉自动排列时仍继续尝试写入：部分环境下坐标仍会生效，
+            # 让 applied 计数反映真实结果，比整体失败更有信息量。
+            try:
+                self.set_auto_arrange(False)
+            except DesktopError:
+                pass
         hwnd = self.hwnd
         applied = 0
         try:

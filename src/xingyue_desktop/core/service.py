@@ -202,6 +202,18 @@ class AppService:
             self.log("error", f"{title}失败：{state.error}")
             return None, report
         return state, None
+
+    def _prepare_target_dir(self, path: Path, desktop_root: Path) -> None:
+        # 分类目录建在桌面下，而桌面本身可能被其他进程替换为 junction（联接点）。
+        # 只在路径字符串上校验不成立：mkdir 会跟随重定向点，文件随即被移出桌面。
+        # 因此建目录前拒绝重定向点，建完再校验解析结果仍落在桌面内。
+        if path.is_dir() and desktop_files.is_reparse_point(path):
+            raise OSError(f"目标目录是重定向链接，已拒绝：{path}")
+        path.mkdir(parents=True, exist_ok=True)
+        try:
+            path.resolve().relative_to(desktop_root)
+        except ValueError:
+            raise OSError(f"目标目录解析到桌面之外，已拒绝：{path}") from None
     def next_scheme_name(self) -> str:
         existing = {s.name for s in self.snapshots}
         index = 1
@@ -384,7 +396,8 @@ class AppService:
         summary = "，".join(f"{cat} {count}" for cat, count in plan.counts.items())
         report.add(f"计划将 {len(plan.moves)} 个文件归入 {len(plan.folders)} 个文件夹（{summary}）", "info")
 
-        if dry_run if dry_run is not None else self.settings.dry_run:
+        preview = self.settings.dry_run if dry_run is None else dry_run
+        if preview:
             report.detail["dry_run"] = True
             for move in plan.moves[:40]:
                 report.add(f"预演 · {move.src.name} → {move.dst.parent.name}/", "muted")
@@ -401,10 +414,11 @@ class AppService:
 
         done: list[tuple[str, str]] = []
         failed = 0
+        desktop_root = root.resolve()
         for move in plan.moves:
             try:
                 target = organizer.unique_target(move.dst)
-                target.parent.mkdir(parents=True, exist_ok=True)
+                self._prepare_target_dir(target.parent, desktop_root)
                 shutil.move(str(move.src), str(target))
                 done.append((str(move.src), str(target)))
             except (OSError, shutil.Error) as exc:
@@ -451,7 +465,13 @@ class AppService:
             report.add(f"预演：将重排 {len(moves)} 个图标", "info")
             return report
         if state.auto_arrange:
-            self.backend.set_auto_arrange(False)
+            try:
+                self.backend.set_auto_arrange(False)
+            except DesktopError as exc:
+                report.ok = False
+                report.add(f"无法关闭桌面「自动排列图标」：{exc}", "error")
+                self.log("error", str(exc))
+                return report
             self.log("warn", "已关闭桌面「自动排列图标」以便排序")
         applied = self.backend.set_positions(moves, disable_auto=False)
         self.backend.refresh()
@@ -485,6 +505,8 @@ class AppService:
                 failed += 1
                 report.add("撤销记录缺少有效路径，已跳过", "warn")
                 continue
+            # journal.json 是可被手工编辑的普通文件，按不可信输入处理：
+            # 两端都要求解析后落在桌面内，避免被构造的记录把任意文件搬进或搬出桌面。
             try:
                 src = Path(raw_src).resolve()
                 dst = Path(raw_dst).resolve()
@@ -500,7 +522,7 @@ class AppService:
                 continue
             try:
                 target = organizer.unique_target(src)
-                target.parent.mkdir(parents=True, exist_ok=True)
+                self._prepare_target_dir(target.parent, desktop_root)
                 shutil.move(str(dst), str(target))
                 restored += 1
                 touched.add(dst.parent)

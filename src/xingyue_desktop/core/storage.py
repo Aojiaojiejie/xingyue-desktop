@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -40,13 +41,20 @@ class Store:
             return default
 
     def _write_json(self, path: Path, data: Any) -> None:
+        # 写完同目录临时文件再 os.replace，读者只会看到完整 JSON。
+        # 用 mkstemp 而非固定 .tmp 名：并发保存或上次中断残留时不会互相覆盖。
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(path.name + ".tmp")
-        with open(tmp, "w", encoding="utf-8") as handle:
-            json.dump(data, handle, ensure_ascii=False, indent=2)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp, path)
+        fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f"{path.name}.", suffix=".tmp")
+        tmp = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(data, handle, ensure_ascii=False, indent=2)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp, path)
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
     def load_settings(self) -> Settings:
         return Settings.from_dict(self._read_json(self.settings_path, {}))
 
@@ -173,7 +181,11 @@ class Store:
         for raw in schemes:
             if not isinstance(raw, dict):
                 continue
-            snapshot = Snapshot.from_dict(raw)
+            try:
+                snapshot = Snapshot.from_dict(raw)
+            except (TypeError, ValueError):
+                # 导入文件可能来自旧版本或被手工编辑，单条损坏不应让整批失败。
+                continue
             snapshot.id = new_id("s")
             snapshot.auto = False
             snapshot.created_at = now_iso()

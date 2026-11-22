@@ -55,6 +55,19 @@ def is_hidden(path: Path) -> bool:
     return bool(attrs & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM))
 
 
+def is_reparse_point(path: Path) -> bool:
+    """判断路径本身是否为符号链接或目录联接（junction）。
+
+    桌面目录可能被其他进程替换为重定向点。移动文件前若只校验路径字符串，
+    mkdir + move 会把文件带出桌面范围，因此这里用 lstat 检查链接本身而非目标。
+    """
+    try:
+        attrs = getattr(os.lstat(path), "st_file_attributes", 0)
+    except OSError:
+        return False
+    return bool(attrs & FILE_ATTRIBUTE_REPARSE_POINT)
+
+
 @dataclass
 class EntryInfo:
     path: Path
