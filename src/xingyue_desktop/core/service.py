@@ -288,7 +288,13 @@ class AppService:
                 report.add(f"已把当前布局记录为「{backup.name}」", "info")
 
         if state.auto_arrange:
-            self.backend.set_auto_arrange(False)
+            try:
+                self.backend.set_auto_arrange(False)
+            except DesktopError as exc:
+                report.ok = False
+                report.add(f"无法关闭桌面「自动排列图标」：{exc}", "error")
+                self.log("error", str(exc))
+                return report
             self.log("warn", "检测到桌面「自动排列图标」已开启，已暂时关闭以便写入位置")
 
         applied = self.backend.set_positions(moves)

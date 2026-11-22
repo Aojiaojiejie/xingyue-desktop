@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
@@ -53,7 +54,10 @@ class Store:
                 os.fsync(handle.fileno())
             os.replace(tmp, path)
         except BaseException:
-            tmp.unlink(missing_ok=True)
+            # Windows 上句柄未释放干净时 unlink 会抛 PermissionError，
+            # 不加抑制会掩盖真正的写入异常，且把临时文件留在目录里。
+            with contextlib.suppress(OSError):
+                tmp.unlink(missing_ok=True)
             raise
     def load_settings(self) -> Settings:
         return Settings.from_dict(self._read_json(self.settings_path, {}))

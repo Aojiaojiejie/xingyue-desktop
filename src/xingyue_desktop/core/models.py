@@ -207,7 +207,7 @@ class Snapshot:
         spacing = data.get("spacing") or [96, 96]
         try:
             spacing_t = (int(spacing[0]), int(spacing[1]))
-        except (TypeError, ValueError, IndexError):
+        except (TypeError, ValueError, IndexError, KeyError):
             spacing_t = (96, 96)
         raw_id = str(data.get("id") or "")
         snapshot_id = raw_id if is_valid_id(raw_id) else new_id("s")

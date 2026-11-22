@@ -351,8 +351,8 @@ class DesktopAPI:
         self._ensure()
         assert self._remote is not None
         if disable_auto:
-            # 关不掉自动排列时仍继续尝试写入：部分环境下坐标仍会生效，
-            # 让 applied 计数反映真实结果，比整体失败更有信息量。
+            # 关不掉自动排列时仍继续尝试写入：LVM_SETITEMPOSITION32 一旦成功即返回 TRUE，
+            # 本层无法区分「写入后被自动排列覆盖」，真实结果交由上层的 applied 计数判断。
             try:
                 self.set_auto_arrange(False)
             except DesktopError:
